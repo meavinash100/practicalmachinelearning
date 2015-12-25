@@ -5,18 +5,130 @@ date: "December 21, 2015"
 output: html_document
 ---
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+Human Activity Recognition (HAR) is a new key field of study that is emerging as a key research area to develop context aware systems. There are many potential applications of HAR. Some of those are following:
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+* Elderly monitoring 
+* Life log systems for monitoring energy expenditure and for supporting weight-loss programs
+* Digital assistants for weight lifting exercises
+
+Weight Lifting Exercises Dataset:
+
+Weight Lifting Exercises dataset is to investigate "how (well)" an activity was performed by the wearer. Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).
+
+Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes.
+
+Read more: http://groupware.les.inf.puc-rio.br/har#ixzz3v3mADg7n
+
+```{r, echo=TRUE, message=FALSE}
+library(caret)
+library(dplyr)
+```
+
+### Getting and Cleaning Data
 
 ```{r}
-summary(cars)
+setwd("C:\\Users\\Avinash\\Desktop\\R Files\\Coursera\\Machine Learning")
+
+hardata <- read.csv("pml-training.csv")
+
+#Cleaning Data 
+hardata <- select(hardata, 
+                  -X, 
+                  -user_name, 
+                  -raw_timestamp_part_1, 
+                  -raw_timestamp_part_2, 
+                  -cvtd_timestamp, 
+                  -new_window, 
+                  -num_window)
+#Extracting belt, arm, dumbell, forearm related variables only
+hardata <- hardata[, grepl("gyros|accel|magnet|classe", names(hardata))]
+hardata <- select(hardata, -starts_with("var"))
+
+dim(hardata)
 ```
 
-You can also embed plots, for example:
+### Creating Training and Test Sets
 
-```{r, echo=FALSE}
-plot(cars)
+```{r}
+set.seed(1456)
+intrain <- createDataPartition(y = hardata$classe, 
+                               p = 0.6, 
+                               list = FALSE)
+traincomplete <- hardata[intrain,]
+testing <- hardata[-intrain,]
+dim(traincomplete)
+dim(testing)
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+### Feature Plots for Exploratory Analysis
+
+```{r}
+featurePlot(x = traincomplete[, c("total_accel_belt", 
+                                  "total_accel_arm", 
+                                  "total_accel_dumbbell",
+                                  "total_accel_forearm")],
+            y = traincomplete$classe,
+            plot = "ellipse",
+            auto.key = list(columns = 4))
+```
+
+### Fitting Random Forest Classification Model
+
+```{r, echo=TRUE, message=FALSE, cache=TRUE}
+
+#Adding Repeated K Fold Cross Validation
+
+fitCOntrol <- trainControl(method = "repeatedcv",
+                           number = 10,
+                           repeats = 3)
+
+rffit <- train(classe ~ ., 
+               data = traincomplete, 
+               method = "rf",
+               trControl = fitCOntrol)
+
+print(rffit, digits = 3)
+print(rffit$finalModel)
+
+pred1 <- predict(rffit, testing)
+
+confusionMatrix(testing$classe, pred1)
+
+plot(rffit, 
+     log = "y", 
+     lwd = 2, 
+     main = "Random forest accuracy", 
+     xlab = "Predictors", 
+     ylab = "Accuracy")
+```
+
+* Here we have used repeated K fold cross validation approach for cross validation. Where we have taken K as 10. As larger K would give us less bias and more variance. While using smaller K i.e. in our case we will get more bias and less variance.
+
+### Out of Sample Error
+
+```{r}
+oosaccuracy <- sum(pred1 == testing$classe)/length(pred1)
+oose <- round((1 - oosaccuracy)*100,3)
+```
+
+* Out of Sample error estimation is `r oose` 
+
+### Prediction for 20 Test Cases
+
+```{r, echo=TRUE}
+test <- read.csv("pml-testing.csv")
+test <- rename(test, classe = problem_id)
+test <- select(test, 
+                  -X, 
+                  -user_name, 
+                  -raw_timestamp_part_1, 
+                  -raw_timestamp_part_2, 
+                  -cvtd_timestamp, 
+                  -new_window, 
+                  -num_window)
+#Extracting belt, arm, dumbell, forearm related variables only
+test <- test[, grepl("gyros|accel|magnet|classe", names(test))]
+test <- select(test, -starts_with("var"))
+pred2 <- predict(rffit, test)
+pred2
+```
